@@ -27,5 +27,11 @@ object WalmartSalesProjection {
 
 class WalmartSalesProjectionPipeline {
 
-
 }
+
+//first need data in a consumable format: Load Store with weeklySalesData with date
+//Randomly Sample the timeSeries data as validation set
+//Separate the set to training and validation
+//train the training set with baseline
+//code evaluation metric: weighted mean absolute error (WMAE):
+//Calculate the evaluation metric with validation set
