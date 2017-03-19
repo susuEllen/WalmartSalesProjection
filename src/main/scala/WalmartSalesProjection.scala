@@ -13,13 +13,34 @@
   */
 
 import com.typesafe.config.ConfigFactory
+import org.apache.spark.{SparkConf, SparkContext}
 
 object WalmartSalesProjection {
 
   def main(args: Array[String]) = {
+
     println("Hello! I am WalmartSalesProjectionApp")
-    val value = ConfigFactory.load().getString("filepaths.inputdir")
-    println(s"My inputdir is $value")
+    try {
+      val config = ConfigFactory.load()
+      val inputDir = config.getString("filepaths.inputdir")
+      println(s"My inputdir is $inputDir")
+      val trainingFile = inputDir + config.getString("filepaths.train")
+      println(s"My training file is $trainingFile")
+      val featuresFile = inputDir + config.getString("filepaths.features")
+      println(s"My features file is $featuresFile")
+
+      println(s"***Now Loading Spark***")
+      val conf = new SparkConf().setAppName("Simple Application").setMaster("local")
+      val sc = new SparkContext(conf)
+      println(s"***Loading Spark Complete***")
+      val data: Array[String] = sc.textFile(trainingFile).collect()
+      println(s"***Training File first line: ${data(0)}")
+    }
+    catch {
+      case e: Exception => {
+        e.printStackTrace()
+      }
+    }
   }
 
 }
