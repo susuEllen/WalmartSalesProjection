@@ -12,22 +12,105 @@
   * but it is challenging to predict which departments are affected and the extent of the impact.
   */
 
-import com.typesafe.config.ConfigFactory
+import java.io.File
+import java.time.LocalDateTime
+
+import com.typesafe.config.{Config, ConfigFactory}
+import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.log4j.{Level, Logger}
+import org.apache.spark.rdd.RDD
 
 object WalmartSalesProjection {
 
   def main(args: Array[String]) = {
     println("Hello! I am WalmartSalesProjectionApp")
-    val value = ConfigFactory.load().getString("filepaths.inputdir")
-    println(s"My inputdir is $value")
+    //val value = ConfigFactory.load().getString("filepaths.inputdir")
+//    println(s"My inputdir is $value")
+    implicit val config = ConfigFactory.load()
+    val walmartSalesProjectionPipeline = new WalmartSalesProjectionPipeline()
+    walmartSalesProjectionPipeline.run()
+  }
+}
+
+
+class WalmartSalesProjectionPipeline(implicit val config: Config) extends Serializable {
+
+  val currentDir = new File(".").getCanonicalPath
+  val featureInputCSV = s"$currentDir/src/main/resources/${config.getString("filepaths.features")}"
+  val storesInfoCSV = s"$currentDir/src/main/resources/${config.getString("filepaths.stores")}"
+  //val trainingDataCSV = s"$currentDir/src/main/resources/${config.getString("filepaths.train")}" //TODO: comment this once the pipeline is done to run on the whole set
+  val trainingDataCSV = s"$currentDir/src/main/resources/${config.getString("filepaths.train100")}"
+  val HeaderPrefix = "Store,"
+
+  def run() = {
+
+    println(s"featureInputCSV: $featureInputCSV\nstoresInfoCSV: $storesInfoCSV\ntrainingDataCSV: $trainingDataCSV\n")
+    //Read the raw file
+    val conf = new SparkConf().setAppName("WalmartSalesProjectionPipeline").setMaster("local")
+    val sc = new SparkContext(conf)
+
+    val rootLogger = Logger.getRootLogger()
+    rootLogger.setLevel(Level.FATAL)
+
+    val storeInfoRDD: RDD[String] = sc.textFile(storesInfoCSV).filter(!_.startsWith(HeaderPrefix))
+    val featuresInfoRDD: RDD[String] = sc.textFile(featureInputCSV).filter(!_.startsWith(HeaderPrefix))
+    val trainingDataRDD: RDD[String] = sc.textFile(trainingDataCSV).filter(!_.startsWith(HeaderPrefix))
+
+    val stores: RDD[Store] = storeInfoRDD.map{
+      storeInfoRow =>
+        val splittedRow = storeInfoRow.split(",")
+        Store(splittedRow)}
+
+    val featuresPerStorePerWeek: RDD[WeeklyStoreFeatures] = featuresInfoRDD.map {
+      featurePerStorePerWeek =>
+        val splittedRow = featurePerStorePerWeek.split(",")
+        WeeklyStoreFeatures(splittedRow)
+    }
+
+    val storeInfo = stores.collect() //TODO: refactor to not collect run in non local mode
+    val storeFeatures = featuresPerStorePerWeek.collect()
+
+    val trainingData: RDD[WeeklyWalmartSalesData] = trainingDataRDD.map{
+      trainingDataRow =>
+        val splittedRow = trainingDataRow.split(",")
+        val weeklyStoreData = WeeklyStoreData(splittedRow)
+        val featureForThisStoreThisWeek = storeFeatures.filter(storeFeature => (storeFeature.id == weeklyStoreData.id) && (storeFeature.dateTime == weeklyStoreData.dateTime))
+        require(!featureForThisStoreThisWeek.isEmpty)  // throw if can't find feature for the store
+        val storeInfoForThisStore: Array[Store] = storeInfo.filter(_.id == weeklyStoreData.id)
+
+        WeeklyWalmartSalesData(
+          store = storeInfoForThisStore.head,
+          department = weeklyStoreData.department,
+          dateTime = weeklyStoreData.dateTime,
+          sales = weeklyStoreData.sales,
+          isHoliday = weeklyStoreData.isHoliday,
+          isHoliday_feature = featureForThisStoreThisWeek.head.isHoliday_feature,
+          temperature = featureForThisStoreThisWeek.head.temperature,
+          fuelPrice = featureForThisStoreThisWeek.head.fuelPrices,
+          cpi = featureForThisStoreThisWeek.head.cpi,
+          unemployment = featureForThisStoreThisWeek.head.unemployment,
+          markDown1 = featureForThisStoreThisWeek.head.markDown1,
+          markDown2 = featureForThisStoreThisWeek.head.markDown2,
+          markDown3 = featureForThisStoreThisWeek.head.markDown3,
+          markDown4 = featureForThisStoreThisWeek.head.markDown4,
+          markDown5 = featureForThisStoreThisWeek.head.markDown5)
+    }
+
+    /* print out so statistics*/
+    /* count training data, count store data, count features, first few training data, features count
+    * */
+
+    println(s"\nStore Count : ${storeInfo.length}" +
+      s"\nFeaturesInfo Count :${storeFeatures.length}" +
+      s"\nTrainingSet Count :${trainingData.count()}" +
+      s"\nTrainingDataRaw :\n${trainingData.take(10).mkString("\n")}\n")
+
+    sc.stop()
   }
 
 }
 
 
-class WalmartSalesProjectionPipeline {
-
-}
 
 //first need data in a consumable format: Load Store with weeklySalesData with date
 //Randomly Sample the timeSeries data as validation set
