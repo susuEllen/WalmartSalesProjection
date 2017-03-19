@@ -13,7 +13,6 @@
   */
 
 import java.io.File
-import java.time.LocalDateTime
 
 import com.typesafe.config.{Config, ConfigFactory}
 import org.apache.spark.{SparkConf, SparkContext}
@@ -36,15 +35,15 @@ object WalmartSalesProjection {
 class WalmartSalesProjectionPipeline(implicit val config: Config) extends Serializable {
 
   val currentDir = new File(".").getCanonicalPath
-  val featureInputCSV = s"$currentDir/src/main/resources/${config.getString("filepaths.features")}"
-  val storesInfoCSV = s"$currentDir/src/main/resources/${config.getString("filepaths.stores")}"
-  //val trainingDataCSV = s"$currentDir/src/main/resources/${config.getString("filepaths.train")}" //TODO: comment this once the pipeline is done to run on the whole set
-  val trainingDataCSV = s"$currentDir/src/main/resources/${config.getString("filepaths.train100")}"
+  val featureInputCSVPath = s"$currentDir/src/main/resources/${config.getString("filepaths.features")}"
+  val storesInfoCSVPath = s"$currentDir/src/main/resources/${config.getString("filepaths.stores")}"
+  //val trainingDataCSVPath = s"$currentDir/src/main/resources/${config.getString("filepaths.train")}" //TODO: comment this once the pipeline is done to run on the whole set
+  val trainingDataCSVPath = s"$currentDir/src/main/resources/${config.getString("filepaths.train100")}"
   val HeaderPrefix = "Store,"
 
   def run() = {
 
-    println(s"featureInputCSV: $featureInputCSV\nstoresInfoCSV: $storesInfoCSV\ntrainingDataCSV: $trainingDataCSV\n")
+    println(s"featureInputCSV: $featureInputCSVPath\nstoresInfoCSV: $storesInfoCSVPath\ntrainingDataCSV: $trainingDataCSVPath\n")
     //Read the raw file
     val conf = new SparkConf().setAppName("WalmartSalesProjectionPipeline").setMaster("local")
     val sc = new SparkContext(conf)
@@ -52,9 +51,9 @@ class WalmartSalesProjectionPipeline(implicit val config: Config) extends Serial
     val rootLogger = Logger.getRootLogger()
     rootLogger.setLevel(Level.FATAL)
 
-    val storeInfoRDD: RDD[String] = sc.textFile(storesInfoCSV).filter(!_.startsWith(HeaderPrefix))
-    val featuresInfoRDD: RDD[String] = sc.textFile(featureInputCSV).filter(!_.startsWith(HeaderPrefix))
-    val trainingDataRDD: RDD[String] = sc.textFile(trainingDataCSV).filter(!_.startsWith(HeaderPrefix))
+    val storeInfoRDD: RDD[String] = DataLoader.loadRDDFromPath(sc, storesInfoCSVPath).filter(!_.startsWith(HeaderPrefix))
+    val featuresInfoRDD: RDD[String] = DataLoader.loadRDDFromPath(sc, featureInputCSVPath).filter(!_.startsWith(HeaderPrefix))
+    val trainingDataRDD: RDD[String] = DataLoader.loadRDDFromPath(sc, trainingDataCSVPath).filter(!_.startsWith(HeaderPrefix))
 
     val stores: Array[Store] = storeInfoRDD.map{
       storeInfoRow =>
