@@ -42,9 +42,6 @@ class WalmartSalesProjectionPipeline(implicit val config: Config) extends Serial
   val HeaderPrefix = "Store,"
 
   def run() = {
-
-    println(s"featureInputCSV: $featureInputCSVPath\nstoresInfoCSV: $storesInfoCSVPath\ntrainingDataCSV: $trainingDataCSVPath\n")
-    //Read the raw file
     val conf = new SparkConf().setAppName("WalmartSalesProjectionPipeline").setMaster("local")
     val sc = new SparkContext(conf)
 
@@ -59,14 +56,14 @@ class WalmartSalesProjectionPipeline(implicit val config: Config) extends Serial
       storeInfoRow =>
         val splittedRow = storeInfoRow.split(",")
         Store(splittedRow)}.collect()
-
     val weeklyStoreFeatures: Array[WeeklyStoreFeatures] = featuresInfoRDD.map {
       featurePerStorePerWeek =>
         val splittedRow = featurePerStorePerWeek.split(",")
         WeeklyStoreFeatures(splittedRow)
     }.collect()
 
-    val trainingData: RDD[WeeklyWalmartSalesData] = trainingDataRDD.map{
+    // combining data from a few sources into one RDD
+    val trainingDataRaw: RDD[WeeklyWalmartSalesData] = trainingDataRDD.map{
       trainingDataRow =>
         val splittedRow = trainingDataRow.split(",")
         val weeklyStoreData = WeeklyStoreData(splittedRow)
@@ -93,12 +90,28 @@ class WalmartSalesProjectionPipeline(implicit val config: Config) extends Serial
           markDown5 = featureForThisStoreThisWeek.head.markDown5)
     }
 
+    // splitting into training and validation
+    val Array(trainingData, validationData) =  trainingDataRaw.randomSplit(Array(0.8, 0.2))
+
+    // training and validation
+    val model = new BaseLineModel
+    val trainedModel = model.train(trainingData)
+    val predictedAndActualResults: Array[(Double, Double)] = validationData.map{
+      storeSalesData => (trainedModel(storeSalesData.store), storeSalesData.sales)}.collect()
+
+    println(s"\n(Predict, Actual)\n${predictedAndActualResults.mkString("\n")}")
+    //calculate metrics
+    val mse = Metrics.MeanSquareError(predictedAndActualResults)
+    println(s"\nBaselineMetric\nMSE:\t$mse")
+
     /* print out so statistics*/
     /* count training data, count store data, count features, first few training data, features count
     * */
     println(s"\nStore Count : ${stores.length}" +
       s"\nFeaturesInfo Count :${weeklyStoreFeatures.length}" +
+      s"\nTrainingRaw Count :${trainingDataRaw.count()}" +
       s"\nTrainingSet Count :${trainingData.count()}" +
+      s"\nValidationSet Count :${validationData.count()}" +
       s"\nTrainingDataRaw :\n${trainingData.take(10).mkString("\n")}\n")
 
     sc.stop()
